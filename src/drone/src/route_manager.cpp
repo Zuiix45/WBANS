@@ -1,42 +1,49 @@
 #include "drone/route_manager.hpp"
 
 namespace {
-  void parseCoordsStr(std::string coordsStr, std::vector<double> &coords) {
-    std::string delimiter = ",";
-    size_t pos = 0;
-    std::string token;
-    int i = 0;
-    while ((pos = coordsStr.find(delimiter)) != std::string::npos) {
-      token = coordsStr.substr(0, pos);
-      coords[i] = std::stod(token);
-      coordsStr.erase(0, pos + delimiter.length());
-      i++;
-    }
-    coords[i] = std::stod(coordsStr);
+  void createWaypoint(std::string waypointStr, px4_msgs::msg::PositionSetpoint &waypoint) {
+    double lat = std::stod(waypointStr.substr(0, waypointStr.find(",")));
+    waypointStr.erase(0, waypointStr.find(",") + 1);
+    double lon = std::stod(waypointStr.substr(0, waypointStr.find(",")));
+    waypointStr.erase(0, waypointStr.find(",") + 1);
+    double alt = std::stod(waypointStr);
+
+    waypoint.valid = true;
+    waypoint.lat = lat;
+    waypoint.lon = lon;
+    waypoint.alt = alt;
   }
 }
 
 RouteManager::RouteManager()
-    : Node("route_manager"), running(true), nextWaypoint(0), currentPos({0.0, 0.0, 0.0}) {
+    : Node("route_manager"), running(true), currentWaypoint(0) {
 
-      int bufferSize_;
+      std::vector<std::string> waypoints_;
 
       this->declare_parameter("waypoints", rclcpp::PARAMETER_STRING_ARRAY);
       this->declare_parameter("tolerance_factors", rclcpp::PARAMETER_DOUBLE_ARRAY);
-      this->declare_parameter("buffer_size", 10);
 
       this->get_parameter("waypoints", waypoints_);
       this->get_parameter("tolerance_factors", toleranceFactors_);
-      this->get_parameter("buffer_size", bufferSize_);
 
-      if (this->waypoints_.size() == 0) throw std::runtime_error("No waypoints found");
+      if (waypoints_.size() == 0) throw std::runtime_error("No waypoints found");
 
-      this->routePublisher = this->create_publisher<std_msgs::msg::String>("waypoint_transmit", bufferSize_);
-      this->routeTimer = this->create_wall_timer(
-      500ms, std::bind(&RouteManager::routeTimer_callback, this));
+      for (auto waypointStr : waypoints_) {
+        px4_msgs::msg::PositionSetpoint waypoint;
+        createWaypoint(waypointStr, waypoint);
+        waypoints.push_back(waypoint);
+      }
 
-      this->posSubscriber = this->create_subscription<std_msgs::msg::String>(
-      "pos_transmit", bufferSize_, std::bind(&RouteManager::pos_callback, this, _1));
+      this->waypointPublisher = this->create_publisher<px4_msgs::msg::PositionSetpointTriplet>(
+      "rt/fmu/out/position_setpoint_triplet", 10);
+
+      this->waypointPubTimer = this->create_wall_timer(
+      500ms, [this]{this->waypointPub_callback();});
+
+      this->currentPosSubscriber = this->create_subscription<px4_msgs::msg::VehicleGlobalPosition>(
+      "/fmu/in/aux_global_position", 10, [this](const px4_msgs::msg::VehicleGlobalPosition msg) {
+        this->currentPosSub_callback(msg);
+      });
     }
 
 bool RouteManager::isOnPoint() {
@@ -44,18 +51,12 @@ bool RouteManager::isOnPoint() {
     return ((aim - tolerance < current) && (aim + tolerance > current));
   };
 
-  std::string waypointStr = this->waypoints_[this->nextWaypoint];
-  std::vector<double> waypoint(3);
-  parseCoordsStr(waypointStr, waypoint);
+  auto waypoint = waypoints[currentWaypoint];
 
-  bool result = (isClose(toleranceFactors_[0], waypoint[0], currentPos[0]) &&
-            isClose(toleranceFactors_[1], waypoint[1], currentPos[1]) &&
-            isClose(toleranceFactors_[2], waypoint[2], currentPos[2]));
-
-  waypoint.clear();
-  waypoint.shrink_to_fit();
-
-  return result;
+  // Check if the drone is on the current waypoint
+  return (isClose(toleranceFactors_[0], waypoint.lat, currentPos.lat) &&
+          isClose(toleranceFactors_[1], waypoint.lon, currentPos.lon) &&
+          isClose(toleranceFactors_[2], waypoint.alt, currentPos.alt));
 }
 
 bool RouteManager::shouldExit() {
@@ -66,26 +67,39 @@ void RouteManager::exit() {
   running = false;
 }
 
-void RouteManager::routeTimer_callback() {
-  auto message = std_msgs::msg::String();
-  message.data = waypoints_[nextWaypoint];
-  RCLCPP_INFO(this->get_logger(), message.data.c_str());
-  this->routePublisher->publish(message);
+void RouteManager::waypointPub_callback() {
+  px4_msgs::msg::PositionSetpointTriplet msg;
+  RCLCPP_INFO(this->get_logger(), "Current position: lat: %f, lon: %f, alt: %f", currentPos.lat, currentPos.lon, currentPos.alt);
+
+  if (currentWaypoint == 0) {
+    msg.current = waypoints[currentWaypoint];
+    msg.next = waypoints[currentWaypoint + 1];
+
+    msg.previous.valid = false;
+  } 
+  
+  else if (currentWaypoint == (int)waypoints.size() - 1) {
+    msg.previous = waypoints[currentWaypoint - 1];
+    msg.current = waypoints[currentWaypoint];
+
+    msg.next.valid = false;
+  }
+
+  else {
+    msg.previous = waypoints[currentWaypoint - 1];
+    msg.current = waypoints[currentWaypoint];
+    msg.next = waypoints[currentWaypoint + 1];
+  }
 }
 
-void RouteManager::pos_callback(const std_msgs::msg::String::SharedPtr msg) {
-  // Parse the received position message and update the current position
-  parseCoordsStr(msg->data, this->currentPos);
-
+void RouteManager::currentPosSub_callback(const px4_msgs::msg::VehicleGlobalPosition msg) {
+  currentPos = msg;
+  RCLCPP_INFO(this->get_logger(), "Current position: lat: %f, lon: %f, alt: %f", currentPos.lat, currentPos.lon, currentPos.alt);
   if (isOnPoint()) {
-    nextWaypoint++;
-
-    if (nextWaypoint == waypoints_.size()) {
-      RCLCPP_INFO(this->get_logger(), "Route completed");
-      this->exit();
+    currentWaypoint++;
+    if (currentWaypoint >= (int)waypoints.size()) {
+      exit();
     }
-
-    RCLCPP_INFO(this->get_logger(), "Next waypoint: %s", waypoints_[nextWaypoint].c_str());
   }
 }
 

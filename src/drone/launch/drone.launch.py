@@ -26,27 +26,11 @@ def generate_launch_description():
         package='drone',
         executable='route_manager',
         output='screen',
-        parameters=[{"waypoints": load_waypoints("./waypoints.txt"), "tolerance_factors": [0.005, 0.005, 0.5], "buffer_size": 10}],
-        shell=True,
-    )
-    
-    sensor_combined_node = Node(
-        package='drone',
-        executable='sensor_combined',
-        output='screen',
-        shell=True,
-    )
-    
-    debugvect_advertiser_node = Node(
-        package='drone',
-        executable='debugvect_advertiser',
-        output='screen',
-        shell=True,
+        parameters=[{"waypoints": load_waypoints("./waypoints.txt"), "tolerance_factors": [0.005, 0.005, 0.5]}],
+        shell=True
     )
 
     return LaunchDescription([
         xrce_dds_agent,
-        route_manager_node,
-        sensor_combined_node,
-        debugvect_advertiser_node
+        route_manager_node
     ])

@@ -24,26 +24,6 @@ target_include_directories(route_manager PUBLIC
   $<INSTALL_INTERFACE:include>)
 target_compile_features(route_manager PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
 
-# sensor_combined node
-add_executable(sensor_combined src/sensor_combined.cpp)
-ament_target_dependencies(sensor_combined rclcpp std_msgs px4_msgs)
-install(TARGETS sensor_combined DESTINATION lib/${PROJECT_NAME})
-
-target_include_directories(sensor_combined PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>)
-target_compile_features(sensor_combined PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
-
-# debugvect_advertiser node
-add_executable(debugvect_advertiser src/debugvect_advertiser.cpp)
-ament_target_dependencies(debugvect_advertiser rclcpp std_msgs px4_msgs)
-install(TARGETS debugvect_advertiser DESTINATION lib/${PROJECT_NAME})
-
-target_include_directories(debugvect_advertiser PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>)
-target_compile_features(debugvect_advertiser PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
-
 
 # INSTALL
 
