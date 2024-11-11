@@ -26,7 +26,7 @@ def generate_launch_description():
         package='drone',
         executable='route_manager',
         output='screen',
-        parameters=[{"waypoints": load_waypoints("./waypoints.txt"), "tolerance_factors": [0.005, 0.005, 0.5]}],
+        parameters=[{"use_sim_time": True, "waypoints": load_waypoints("./waypoints.txt"), "tolerance_factors": [0.005, 0.005, 0.5]}],
         shell=True
     )
 

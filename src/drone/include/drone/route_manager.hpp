@@ -33,20 +33,19 @@ class RouteManager : public rclcpp::Node {
          * 
          * @return True if the drone is on the current waypoint, false otherwise.
          */
-        bool isOnPoint();
+        bool isOnPoint(const px4_msgs::msg::VehicleGlobalPosition::SharedPtr msg);
         bool shouldExit();
         void exit();
 
     private:
         void waypointPub_callback();
-        void currentPosSub_callback(const px4_msgs::msg::VehicleGlobalPosition msg);
+        void currentPosSub_callback(const px4_msgs::msg::VehicleGlobalPosition::SharedPtr msg);
 
         bool running; ///< Flag for running the route.
 
         std::vector<px4_msgs::msg::PositionSetpoint> waypoints; ///< List of waypoints defining the route.
         int currentWaypoint; ///< Index of the current waypoint.
-
-        px4_msgs::msg::VehicleGlobalPosition currentPos; ///< Current position of the drone.
+        
         std::vector<double> toleranceFactors_; ///< Tolerance factors for position checking.
 
         rclcpp::Subscription<px4_msgs::msg::VehicleGlobalPosition>::SharedPtr currentPosSubscriber; ///< Subscriber for position updates.
